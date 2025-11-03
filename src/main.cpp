@@ -311,35 +311,32 @@ struct ICPCSystem {
             unfreezeProblemApply(ti, pi);
             // Update this team's stats only
             recomputeTeamStats(ti);
-            // Bubble up if needed; output a single line if ranking changed
-            string lastOpponent;
-            int pos = curPos;
-            // The team ti may be in set; we'll erase and re-insert with updated positions as needed
-            // Remove current ti entry; we'll re-add if still has frozen after bubbling
+            // Insert ti into the correct position using binary search (stable insertion)
+            // Remove current ti entry from set; re-add later if needed
             S.erase({curPos, ti});
-            while (pos > 0) {
-                int tj = currentOrder[pos-1];
-                if (betterTeam(ti, tj)) {
-                    lastOpponent = teams[tj].name;
-                    // swap positions
-                    currentOrder[pos-1] = ti;
-                    currentOrder[pos] = tj;
-                    int oldPosTi = pos;
-                    int oldPosTj = pos-1;
-                    posOfTeam[ti] = oldPosTj;
-                    posOfTeam[tj] = oldPosTi;
-                    // Update set entries for tj if it has frozen problems
-                    if (hasFrozen(tj)) {
-                        // Erase old and insert new
-                        S.erase({oldPosTj, tj});
-                        S.insert({posOfTeam[tj], tj});
-                    }
-                    pos--;
-                } else {
-                    break;
-                }
+            int pos = curPos;
+            int lo = 0, hi = pos;
+            while (lo < hi) {
+                int mid = (lo + hi) >> 1;
+                if (betterTeam(currentOrder[mid], ti)) lo = mid + 1; else hi = mid;
             }
-            if (!lastOpponent.empty()) {
+            int newPos = lo;
+            if (newPos < pos) {
+                string lastOpponent = teams[currentOrder[newPos]].name;
+                // Shift block [newPos, pos-1] one step to the right
+                for (int i = pos - 1; i >= newPos; --i) {
+                    int tj = currentOrder[i];
+                    currentOrder[i+1] = tj;
+                    // update positions
+                    // erase old and insert new in set if tj has frozen
+                    if (hasFrozen(tj)) {
+                        S.erase({i, tj});
+                        S.insert({i+1, tj});
+                    }
+                    posOfTeam[tj] = i+1;
+                }
+                currentOrder[newPos] = ti;
+                posOfTeam[ti] = newPos;
                 cout << teams[ti].name << ' ' << lastOpponent << ' ' << teams[ti].solvedCount << ' ' << teams[ti].totalPenalty << "\n";
             }
             // If still has frozen problems, reinsert with updated position
