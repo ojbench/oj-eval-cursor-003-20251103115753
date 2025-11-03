@@ -279,39 +279,66 @@ struct ICPCSystem {
         printScoreboard(currentOrder);
 
         // We'll update currentOrder incrementally as we unfreeze
-        // Precompute stats for all teams already up-to-date
-
-        while (true) {
-            int pos = findLowestTeamWithFrozen(currentOrder);
-            if (pos < 0) break; // finished
-            int ti = currentOrder[pos];
-            int pi = chooseSmallestFrozenProblem(ti);
-            if (pi < 0) { // no frozen problem? should not happen
-                // move to next higher team to avoid infinite loop
-                // but safe to break
-                break;
+        // Maintain positions and an ordered set to fetch the lowest-ranked team with frozen problems
+        vector<int> posOfTeam(teams.size());
+        for (size_t i = 0; i < currentOrder.size(); ++i) posOfTeam[currentOrder[i]] = (int)i;
+        auto hasFrozen = [&](int ti)->bool{ return teamHasFrozen(ti); };
+        struct KeyCmp {
+            const vector<int>* posPtr;
+            bool operator()(const pair<int,int>& a, const pair<int,int>& b) const {
+                if (a.first != b.first) return a.first < b.first; // order by position
+                return a.second < b.second; // tie by team index for stability
             }
+        };
+        KeyCmp cmp; cmp.posPtr = &posOfTeam; // not used directly but kept for signature symmetry
+        set<pair<int,int>, KeyCmp> S(cmp);
+        for (size_t i = 0; i < teams.size(); ++i) if (hasFrozen((int)i)) S.insert({posOfTeam[i], (int)i});
+
+        while (!S.empty()) {
+            auto itMax = prev(S.end());
+            int ti = itMax->second;
+            int curPos = itMax->first;
+            // choose smallest frozen problem of this team
+            int pi = chooseSmallestFrozenProblem(ti);
+            if (pi < 0) { continue; }
             // Apply this unfreeze
             unfreezeProblemApply(ti, pi);
             // Update this team's stats only
             recomputeTeamStats(ti);
             // Bubble up if needed; output a single line if ranking changed
             string lastOpponent;
+            int pos = curPos;
+            // The team ti may be in set; we'll erase and re-insert with updated positions as needed
+            // Remove current ti entry; we'll re-add if still has frozen after bubbling
+            S.erase({curPos, ti});
             while (pos > 0) {
                 int tj = currentOrder[pos-1];
                 if (betterTeam(ti, tj)) {
-                    // swap
                     lastOpponent = teams[tj].name;
+                    // swap positions
                     currentOrder[pos-1] = ti;
                     currentOrder[pos] = tj;
+                    int oldPosTi = pos;
+                    int oldPosTj = pos-1;
+                    posOfTeam[ti] = oldPosTj;
+                    posOfTeam[tj] = oldPosTi;
+                    // Update set entries for tj if it has frozen problems
+                    if (hasFrozen(tj)) {
+                        // Erase old and insert new
+                        S.erase({oldPosTj, tj});
+                        S.insert({posOfTeam[tj], tj});
+                    }
                     pos--;
                 } else {
                     break;
                 }
             }
             if (!lastOpponent.empty()) {
-                cout << teams[ti].name << ' ' << lastOpponent << ' '
-                     << teams[ti].solvedCount << ' ' << teams[ti].totalPenalty << "\n";
+                cout << teams[ti].name << ' ' << lastOpponent << ' ' << teams[ti].solvedCount << ' ' << teams[ti].totalPenalty << "\n";
+            }
+            // If still has frozen problems, reinsert with updated position
+            if (hasFrozen(ti)) {
+                S.insert({posOfTeam[ti], ti});
             }
         }
 
