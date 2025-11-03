@@ -140,6 +140,13 @@ struct ICPCSystem {
             if (!p.solved) {
                 if (status == "Accepted") {
                     p.solved = true; p.solvedTime = time;
+                    // incrementally update team stats
+                    t.solvedCount += 1;
+                    t.totalPenalty += 20 * p.wrongBeforeAC + p.solvedTime;
+                    // insert solved time into descending vector
+                    auto &vt = t.solveTimesDesc;
+                    auto it = lower_bound(vt.begin(), vt.end(), p.solvedTime, greater<int>());
+                    vt.insert(it, p.solvedTime);
                 } else if (isNonAC(status)) {
                     p.wrongBeforeAC++;
                 }
@@ -162,8 +169,7 @@ struct ICPCSystem {
     }
 
     void doFlush(bool announce = true) {
-        // Recompute stats for all teams based on applied state
-        for (size_t i = 0; i < teams.size(); ++i) recomputeTeamStats((int)i);
+        // Stats are maintained incrementally; just sort current visible order
         // Sort current visible order
         currentOrder.resize(teams.size());
         iota(currentOrder.begin(), currentOrder.end(), 0);
